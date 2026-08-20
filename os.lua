@@ -7,11 +7,14 @@ local basalt = require("basalt")
 
 local ROOT = "/glasspaneos"
 
-local Icons =
-    require("system.icons")
+package.path =
+    ROOT .. "/?.lua;"
+    .. package.path
 
-local Updater =
-    require("system.updater")
+local basalt = require("basalt")
+
+local Icons = require("system.icons")
+local Updater = require("system.updater")
 
 local USER_FILES =
     ROOT .. "/user/files"
