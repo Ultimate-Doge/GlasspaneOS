@@ -96,56 +96,44 @@ local basaltPath = ROOT .. "/basalt.lua"
 
 if not fs.exists(basaltPath) then
 
-    print("Downloading Basalt installer...")
+    print("Downloading Basalt 2...")
 
-    local installerCode, err = download(
-        "https://basalt.madefor.cc/2.5/install.lua"
-    )
+    -- Download the full Basalt 2 release directly.
+    -- This avoids running Basalt's installer inside
+    -- the GlasspaneOS installer.
+    local basaltURL =
+        "https://raw.githubusercontent.com/"
+        .. "Pyroxenium/Basalt2/"
+        .. "refs/heads/main/"
+        .. "release/basalt-full.lua"
 
-    if not installerCode then
+    local basaltCode, err =
+        download(basaltURL)
+
+    if not basaltCode then
+        print()
         print("Failed to download Basalt:")
         print(err or "Unknown error")
         return
     end
 
-    -- Save temporarily
-    local tempInstaller = ROOT .. "/basalt_install.lua"
+    if not writeFile(
+        basaltPath,
+        basaltCode
+    ) then
 
-    writeFile(tempInstaller, installerCode)
-
-    print("Installing Basalt 2.5...")
-
-    -- Run the installer normally through CraftOS
-    local oldDir = shell.dir()
-
-    shell.setDir(ROOT)
-
-    local success = shell.run(
-        tempInstaller,
-        "minified",
-        "basalt.lua"
-    )
-
-    shell.setDir(oldDir)
-
-    if fs.exists(tempInstaller) then
-        fs.delete(tempInstaller)
-    end
-
-    if not success or not fs.exists(basaltPath) then
         print()
-        print("Basalt installation failed.")
+        print("Failed to save Basalt.")
         return
     end
 
     print("Basalt installed!")
 
 else
+
     print("Basalt already installed.")
+
 end
-
-print()
-
 -- ============================================
 -- Download manifest
 -- ============================================
