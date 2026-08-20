@@ -3,6 +3,7 @@ return {
 
     files = {
         "os.lua",
+        "system/icons.lua",
         "system/updater.lua"
     }
 }
