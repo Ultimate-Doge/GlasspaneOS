@@ -1,8 +1,7 @@
--- =========================================
+-- ============================================
 -- GlasspaneOS Installer
 -- Definitely not Windows.
--- Installs Basalt automatically.
--- =========================================
+-- ============================================
 
 local USER = "Ultimate-Doge"
 local REPO = "GlasspaneOS"
@@ -10,17 +9,23 @@ local BRANCH = "main"
 
 local ROOT = "/glasspaneos"
 
-local BASE =
+local RAW =
     "https://raw.githubusercontent.com/"
     .. USER .. "/"
     .. REPO .. "/"
     .. BRANCH .. "/"
 
--- =========================================
--- Download helper
--- =========================================
+local API =
+    "https://api.github.com/repos/"
+    .. USER .. "/"
+    .. REPO .. "/commits/"
+    .. BRANCH
 
-local function downloadURL(url)
+-- ============================================
+-- Helpers
+-- ============================================
+
+local function download(url)
     local response, err = http.get(url)
 
     if not response then
@@ -31,10 +36,6 @@ local function downloadURL(url)
     response.close()
 
     return data
-end
-
-local function download(path)
-    return downloadURL(BASE .. path)
 end
 
 local function writeFile(path, data)
@@ -59,105 +60,105 @@ local function writeFile(path, data)
     return true
 end
 
--- =========================================
--- Start installer
--- =========================================
+local function getLatestCommit()
+
+    local data = download(API)
+
+    if not data then
+        return nil
+    end
+
+    local decoded =
+        textutils.unserializeJSON(data)
+
+    if decoded and decoded.sha then
+        return decoded.sha
+    end
+
+    return nil
+end
+
+-- ============================================
+-- Start
+-- ============================================
 
 term.clear()
 term.setCursorPos(1, 1)
 
-print("================================")
-print("      GlasspaneOS Installer")
-print("================================")
+print("==============================")
+print("    GlasspaneOS Installer")
+print("==============================")
 print()
 print("Definitely not Windows.")
 print()
 
 if not http then
-    print("ERROR: HTTP API is disabled.")
+
+    print("ERROR: HTTP is disabled.")
     print()
-    print("Enable HTTP in CC:Tweaked config.")
+    print("GlasspaneOS needs HTTP enabled")
+    print("to download the installation.")
+
     return
 end
 
--- =========================================
+-- ============================================
+-- Create root
+-- ============================================
+
+fs.makeDir(ROOT)
+
+-- ============================================
 -- Install Basalt
--- =========================================
+-- ============================================
 
-print("Checking for Basalt...")
+print("Checking Basalt...")
 
-if not fs.exists("/basalt") then
+if not fs.exists(ROOT .. "/basalt.lua") then
 
-    print("Basalt not found.")
-    print("Installing Basalt...")
+    print("Installing Basalt 2.5...")
     print()
 
-    -- Official Basalt installer
-    local basaltURL =
-        "https://basalt.madefor.cc/install.lua"
+    local success = shell.run(
+        "wget",
+        "run",
+        "https://basalt.madefor.cc/2.5/install.lua",
+        "minified",
+        ROOT .. "/basalt.lua"
+    )
 
-    local basaltCode, basaltError =
-        downloadURL(basaltURL)
-
-    if not basaltCode then
-
-        print("Failed to download Basalt.")
-        print(basaltError or "Unknown error")
-
-        return
-    end
-
-    local basaltInstaller,
-        loadError =
-        load(
-            basaltCode,
-            "Basalt Installer"
-        )
-
-    if not basaltInstaller then
-
-        print("Could not load Basalt installer.")
-        print(loadError or "")
-
-        return
-    end
-
-    local success, err =
-        pcall(basaltInstaller)
-
-    if not success then
+    if not success
+        or not fs.exists(ROOT .. "/basalt.lua")
+    then
 
         print()
-        print("Basalt installation failed:")
-        print(err)
+        print("Basalt installation failed.")
 
         return
     end
 
-    print()
     print("Basalt installed!")
-    sleep(1)
+    print()
 
 else
 
     print("Basalt already installed.")
-    sleep(1)
+    print()
 end
 
--- =========================================
--- Download GlasspaneOS manifest
--- =========================================
+-- ============================================
+-- Download manifest
+-- ============================================
 
-print()
-print("Connecting to GitHub...")
+print("Connecting to GlasspaneOS...")
 
 local manifestData, err =
-    download("manifest.lua")
+    download(RAW .. "manifest.lua")
 
 if not manifestData then
 
     print()
-    print("Could not download manifest:")
+    print("Could not download manifest.")
     print(err or "Unknown error")
 
     return
@@ -169,88 +170,78 @@ local manifest =
 if not manifest then
 
     print()
-    print("ERROR: Invalid manifest.lua")
+    print("Invalid manifest.lua")
 
     return
 end
 
-print()
 print(
-    "Found GlasspaneOS "
-    .. manifest.version
+    "Installing GlasspaneOS "
+    .. tostring(manifest.version)
 )
 
 print()
 
--- =========================================
--- Create folders
--- =========================================
-
-fs.makeDir(ROOT)
-fs.makeDir(ROOT .. "/apps")
-fs.makeDir(ROOT .. "/notes")
-fs.makeDir(ROOT .. "/system")
-
--- =========================================
--- Download GlasspaneOS files
--- =========================================
-
-print("Installing GlasspaneOS...")
-print()
+-- ============================================
+-- Download system files
+-- ============================================
 
 for _, filePath in ipairs(manifest.files) do
 
     print("Downloading: " .. filePath)
 
     local data, downloadError =
-        download(filePath)
+        download(RAW .. filePath)
 
     if not data then
 
         print()
         print("FAILED: " .. filePath)
-        print(
-            downloadError
-            or "Unknown error"
-        )
+        print(downloadError or "Unknown error")
 
         return
     end
 
     local destination =
-        fs.combine(
-            ROOT,
-            filePath
-        )
+        fs.combine(ROOT, filePath)
 
-    if not writeFile(
-        destination,
-        data
-    ) then
+    if not writeFile(destination, data) then
 
-        print(
-            "Could not write: "
-            .. destination
-        )
+        print()
+        print("Could not write:")
+        print(destination)
 
         return
     end
 end
 
--- =========================================
--- Save installed version
--- =========================================
+-- ============================================
+-- User folders
+-- These are NOT overwritten by updates
+-- ============================================
+
+fs.makeDir(ROOT .. "/apps")
+fs.makeDir(ROOT .. "/notes")
+fs.makeDir(ROOT .. "/user")
+fs.makeDir(ROOT .. "/user/files")
+
+-- ============================================
+-- Save installation information
+-- ============================================
+
+local commit = getLatestCommit()
 
 writeFile(
-    ROOT .. "/version.lua",
+    ROOT .. "/installed.lua",
     textutils.serialize({
-        version = manifest.version
+        version = manifest.version,
+        commit = commit
     })
 )
 
--- =========================================
--- Create startup
--- =========================================
+-- ============================================
+-- Startup
+-- ============================================
 
 writeFile(
     "/startup",
@@ -259,26 +250,28 @@ shell.run("/glasspaneos/os.lua")
 ]]
 )
 
--- =========================================
+-- ============================================
 -- Finished
--- =========================================
+-- ============================================
 
 term.clear()
 term.setCursorPos(1, 1)
 
-print("================================")
+print("==============================")
 print(" Installation Complete!")
-print("================================")
+print("==============================")
 print()
+
 print(
     "GlasspaneOS "
-    .. manifest.version
+    .. tostring(manifest.version)
 )
+
 print()
-print("Basalt: Installed")
+print("Basalt 2.5 installed.")
 print()
 print("Rebooting...")
 
-sleep(3)
+sleep(2)
 
 os.reboot()
