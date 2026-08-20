@@ -106,19 +106,15 @@ local function createWindow(
             background = colors.lightGray
         })
 
-    window.glasspane = {
-        title = title,
-        normalX = x,
-        normalY = y,
-        normalWidth = width,
-        normalHeight = height,
-        minimized = false,
-        maximized = false,
-        lastDragX = nil,
-        lastDragY = nil,
-        lastResizeX = nil,
-        lastResizeY = nil
-    }
+window.glasspane = {
+    title = title,
+    normalX = x,
+    normalY = y,
+    normalWidth = width,
+    normalHeight = height,
+    minimized = false,
+    maximized = false
+}
 
     -- ========================================
     -- Title bar
