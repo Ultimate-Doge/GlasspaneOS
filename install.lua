@@ -15,12 +15,6 @@ local RAW =
     .. REPO .. "/"
     .. BRANCH .. "/"
 
-local API =
-    "https://api.github.com/repos/"
-    .. USER .. "/"
-    .. REPO .. "/commits/"
-    .. BRANCH
-
 -- ============================================
 -- Helpers
 -- ============================================
@@ -39,12 +33,9 @@ local function download(url)
 end
 
 local function writeFile(path, data)
-
     local folder = fs.getDir(path)
 
-    if folder ~= ""
-        and not fs.exists(folder)
-    then
+    if folder ~= "" and not fs.exists(folder) then
         fs.makeDir(folder)
     end
 
@@ -60,22 +51,20 @@ local function writeFile(path, data)
     return true
 end
 
-local function getLatestCommit()
+local function loadLuaTable(code, name)
+    local fn, err = load(code, name)
 
-    local data = download(API)
-
-    if not data then
-        return nil
+    if not fn then
+        return nil, err
     end
 
-    local decoded =
-        textutils.unserializeJSON(data)
+    local ok, result = pcall(fn)
 
-    if decoded and decoded.sha then
-        return decoded.sha
+    if not ok then
+        return nil, result
     end
 
-    return nil
+    return result
 end
 
 -- ============================================
@@ -93,18 +82,9 @@ print("Definitely not Windows.")
 print()
 
 if not http then
-
     print("ERROR: HTTP is disabled.")
-    print()
-    print("GlasspaneOS needs HTTP enabled")
-    print("to download the installation.")
-
     return
 end
-
--- ============================================
--- Create root
--- ============================================
 
 fs.makeDir(ROOT)
 
@@ -112,66 +92,84 @@ fs.makeDir(ROOT)
 -- Install Basalt
 -- ============================================
 
-print("Checking Basalt...")
+local basaltPath = ROOT .. "/basalt.lua"
 
-if not fs.exists(ROOT .. "/basalt.lua") then
+if not fs.exists(basaltPath) then
 
-    print("Installing Basalt 2.5...")
-    print()
+    print("Downloading Basalt installer...")
 
-    local success = shell.run(
-        "wget",
-        "run",
-        "https://basalt.madefor.cc/2.5/install.lua",
-        "minified",
-        ROOT .. "/basalt.lua"
+    local installerCode, err = download(
+        "https://basalt.madefor.cc/2.5/install.lua"
     )
 
-    if not success
-        or not fs.exists(ROOT .. "/basalt.lua")
-    then
+    if not installerCode then
+        print("Failed to download Basalt:")
+        print(err or "Unknown error")
+        return
+    end
 
+    -- Save temporarily
+    local tempInstaller = ROOT .. "/basalt_install.lua"
+
+    writeFile(tempInstaller, installerCode)
+
+    print("Installing Basalt 2.5...")
+
+    -- Run the installer normally through CraftOS
+    local oldDir = shell.dir()
+
+    shell.setDir(ROOT)
+
+    local success = shell.run(
+        tempInstaller,
+        "minified",
+        "basalt.lua"
+    )
+
+    shell.setDir(oldDir)
+
+    if fs.exists(tempInstaller) then
+        fs.delete(tempInstaller)
+    end
+
+    if not success or not fs.exists(basaltPath) then
         print()
         print("Basalt installation failed.")
-
         return
     end
 
     print("Basalt installed!")
-    print()
 
 else
-
     print("Basalt already installed.")
-    print()
 end
+
+print()
 
 -- ============================================
 -- Download manifest
 -- ============================================
 
-print("Connecting to GlasspaneOS...")
+print("Downloading manifest...")
 
-local manifestData, err =
-    download(RAW .. "manifest.lua")
+local manifestCode, err = download(
+    RAW .. "manifest.lua"
+)
 
-if not manifestData then
-
-    print()
-    print("Could not download manifest.")
+if not manifestCode then
+    print("Failed to download manifest:")
     print(err or "Unknown error")
-
     return
 end
 
-local manifest =
-    textutils.unserialize(manifestData)
+local manifest, manifestError = loadLuaTable(
+    manifestCode,
+    "GlasspaneOS manifest"
+)
 
 if not manifest then
-
-    print()
-    print("Invalid manifest.lua")
-
+    print("Invalid manifest.lua:")
+    print(manifestError or "Unknown error")
     return
 end
 
@@ -190,34 +188,30 @@ for _, filePath in ipairs(manifest.files) do
 
     print("Downloading: " .. filePath)
 
-    local data, downloadError =
-        download(RAW .. filePath)
+    local data, downloadError = download(
+        RAW .. filePath
+    )
 
     if not data then
-
-        print()
         print("FAILED: " .. filePath)
         print(downloadError or "Unknown error")
-
         return
     end
 
-    local destination =
-        fs.combine(ROOT, filePath)
+    local destination = fs.combine(
+        ROOT,
+        filePath
+    )
 
     if not writeFile(destination, data) then
-
-        print()
         print("Could not write:")
         print(destination)
-
         return
     end
 end
 
 -- ============================================
 -- User folders
--- These are NOT overwritten by updates
 -- ============================================
 
 fs.makeDir(ROOT .. "/apps")
@@ -226,16 +220,13 @@ fs.makeDir(ROOT .. "/user")
 fs.makeDir(ROOT .. "/user/files")
 
 -- ============================================
--- Save installation information
+-- Installation information
 -- ============================================
-
-local commit = getLatestCommit()
 
 writeFile(
     ROOT .. "/installed.lua",
     textutils.serialize({
-        version = manifest.version,
-        commit = commit
+        version = manifest.version
     })
 )
 
@@ -246,7 +237,7 @@ writeFile(
 writeFile(
     "/startup",
     [[
-shell.run("/glasspaneos/os.lua")
+dofile("/glasspaneos/os.lua")
 ]]
 )
 
@@ -254,24 +245,12 @@ shell.run("/glasspaneos/os.lua")
 -- Finished
 -- ============================================
 
-term.clear()
-term.setCursorPos(1, 1)
-
+print()
 print("==============================")
 print(" Installation Complete!")
 print("==============================")
 print()
-
-print(
-    "GlasspaneOS "
-    .. tostring(manifest.version)
-)
-
-print()
-print("Basalt 2.5 installed.")
-print()
 print("Rebooting...")
 
 sleep(2)
-
 os.reboot()
