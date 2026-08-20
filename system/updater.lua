@@ -1,8 +1,8 @@
--- =========================================
--- GlasspaneOS Update System
--- =========================================
+-- GlasspaneOS Updater
 
-local USER = "YOUR_GITHUB_USERNAME"
+local updater = {}
+
+local USER = "Ultimate-Doge"
 local REPO = "GlasspaneOS"
 local BRANCH = "main"
 
@@ -14,149 +14,126 @@ local BASE =
     .. REPO .. "/"
     .. BRANCH .. "/"
 
-local function download(url)
-
-    local response = http.get(url)
+local function download(path)
+    local response, err = http.get(BASE .. path)
 
     if not response then
-        return nil
+        return nil, err
     end
 
     local data = response.readAll()
-
     response.close()
 
     return data
 end
 
-local function getInstalledVersion()
-
-    local path =
-        ROOT .. "/version.lua"
+local function getLocalManifest()
+    local path = ROOT .. "/version.lua"
 
     if not fs.exists(path) then
-        return "unknown"
+        return {
+            version = "unknown"
+        }
     end
 
-    local file =
-        fs.open(path, "r")
-
-    local data =
-        textutils.unserialize(
-            file.readAll()
-        )
+    local file = fs.open(path, "r")
+    local data = textutils.unserialize(file.readAll())
 
     file.close()
 
-    if data then
-        return data.version
-    end
-
-    return "unknown"
+    return data or {
+        version = "unknown"
+    }
 end
 
-local function getOnlineManifest()
+function updater.check()
 
-    local data =
-        download(BASE .. "manifest.lua")
+    if not http then
+        return false
+    end
+
+    local data = download("manifest.lua")
 
     if not data then
-        return nil
+        return false
     end
 
-    return textutils.unserialize(data)
+    local online = textutils.unserialize(data)
+
+    if not online then
+        return false
+    end
+
+    local installed = getLocalManifest()
+
+    if installed.version ~= online.version then
+        return true, installed.version, online.version
+    end
+
+    return false, installed.version, online.version
 end
 
-return {
+function updater.update()
 
-    check = function()
+    local manifestData, err = download("manifest.lua")
 
-        if not http then
-            return false
-        end
-
-        local installed =
-            getInstalledVersion()
-
-        local online =
-            getOnlineManifest()
-
-        if not online then
-            return false
-        end
-
-        if installed ~= online.version then
-
-            return true,
-                installed,
-                online.version
-        end
-
-        return false,
-            installed,
-            online.version
-    end,
-
-    update = function()
-
-        local manifest =
-            getOnlineManifest()
-
-        if not manifest then
-            return false,
-                "Could not download manifest."
-        end
-
-        for _, filePath in ipairs(manifest.files) do
-
-            local data =
-                download(BASE .. filePath)
-
-            if not data then
-
-                return false,
-                    "Failed to download "
-                    .. filePath
-            end
-
-            local localPath =
-                fs.combine(
-                    ROOT,
-                    filePath
-                )
-
-            local folder =
-                fs.getDir(localPath)
-
-            if not fs.exists(folder) then
-                fs.makeDir(folder)
-            end
-
-            local file =
-                fs.open(
-                    localPath,
-                    "w"
-                )
-
-            file.write(data)
-
-            file.close()
-        end
-
-        local version =
-            fs.open(
-                ROOT .. "/version.lua",
-                "w"
-            )
-
-        version.write(
-            textutils.serialize({
-                version = manifest.version
-            })
-        )
-
-        version.close()
-
-        return true
+    if not manifestData then
+        return false, err
     end
-}
+
+    local manifest = textutils.unserialize(manifestData)
+
+    if not manifest then
+        return false, "Invalid manifest"
+    end
+
+    for _, filePath in ipairs(manifest.files) do
+
+        local data, downloadError = download(filePath)
+
+        if not data then
+            return false,
+                "Could not download "
+                .. filePath
+                .. ": "
+                .. (downloadError or "unknown error")
+        end
+
+        local destination =
+            fs.combine(ROOT, filePath)
+
+        local folder =
+            fs.getDir(destination)
+
+        if folder ~= "" and not fs.exists(folder) then
+            fs.makeDir(folder)
+        end
+
+        local file =
+            fs.open(destination, "w")
+
+        if not file then
+            return false,
+                "Could not write "
+                .. destination
+        end
+
+        file.write(data)
+        file.close()
+    end
+
+    local versionFile =
+        fs.open(ROOT .. "/version.lua", "w")
+
+    versionFile.write(
+        textutils.serialize({
+            version = manifest.version
+        })
+    )
+
+    versionFile.close()
+
+    return true
+end
+
+return updater
